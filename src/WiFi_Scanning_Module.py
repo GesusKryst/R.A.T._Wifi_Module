@@ -9,23 +9,21 @@ import iw_parse as working_interface
 import csv
 import time as time
 import getmac
+import argparse
+import os
 
 
-
-
-###########################
 ########## Info ###########
-###########################
 __author__ = "George Cadel-Munoz"
 __credits__ = ["George Cadel-Munoz"]
-__version__ = "0.8"
+__version__ = "0.9"
 __maintainer__ = "George Cadel-Munoz"
 __email__ = "gec68@nau.edu"
 __status__ = "Prototype"
 
 
 
-def displayReq(an_interface_list):
+def displayReq(an_interface_list, strenghReq):
     """
     Displays all scanned connections and routers in currently
     scanned list. 
@@ -34,15 +32,20 @@ def displayReq(an_interface_list):
     #print "Length of interface list: {}".format(len(an_interface_list))
     returnStr = ""
     for router in an_interface_list:
-        print "\n================="
-        for cell in router:
-            if (cell == "Frequency" or cell == "Signal Level" or
-                cell == "Name" or cell == "Channel" or cell == "Address"):
-                print "{}: {}".format(cell, router[cell])
-                returnStr = returnStr + router[cell] + ","
-            #print "{}: {}".format(cell, router[cell])
-        print "================\n"
+        router['Signal Level'] = abs(int(router['Signal Level']))
+        if((router['Name'] == "NAU" or router['Name'] == "NAU Guest") and router['Signal Level'] >= strenghReq):
+            router['Signal Level'] = str(router['Signal Level'])
+            print "\n================="
+            #print "Signal Strength: {}\nRequired: {}\n".format(router["Signal Level"], strenghReq)
+            for cell in router:
+                if (cell == "Frequency" or cell == "Signal Level" or
+                    cell == "Name" or cell == "Channel" or cell == "Address"):
+                    print "{}: {}".format(cell, router[cell])
+                    returnStr = returnStr + router[cell] + ","
+                #print "{}: {}".format(cell, router[cell])
+            print "================\n"
     return returnStr
+
 
 def displayAll(an_interface_list):
     """
@@ -78,7 +81,7 @@ def stringToList(a_list_of_strings, max_list_size):
     return final_list
 
 
-def writeToFile( aTwoDimensionList, filePath, headerFlag ):
+def writeToFile( aTwoDimensionList, filePath, headerFlag = True):
     with open(filePath, "wb") as csvfile:
         wr = csv.writer(csvfile, quoting = csv.QUOTE_MINIMAL)
         if(headerFlag):
@@ -87,6 +90,44 @@ def writeToFile( aTwoDimensionList, filePath, headerFlag ):
             wr.writerow(aList)
     csvfile.close()
 
+
+def runScan():
+    # Initiliaze Parser and Commands
+    parser = argparse.ArgumentParser(description = 'A WiFi Scanner parser used for file configurations')
+    parser.add_argument("--fileName", type = str, required = True, help = "Used to name the output CSV file (Required)")
+    parser.add_argument("--sigLimit", type = int, default = 50, help = "Minimum signal strength requested (i.e. 50, 72, 90). Default = 50")
+    args = parser.parse_args()
+
+    # Initialize Variables
+    interface = 'wlp2s0'
+    fileName = os.getcwd() + '/' + args.fileName + '.csv'
+    stringList = []
+    routerList = []
+    refreshRate = 2 # Will wait this long (sec) before scanning again
+    minRequiredRouters = 3 # How many routers do we need minimum?
+    defaultListLength = 5
+    routerListLen = len(routerList)
+    
+    # Start Scans until fulfilled minimum router requirements
+    print("Scanning, please wait...")
+    while(routerListLen < minRequiredRouters):
+        routerList = working_interface.get_interfaces(interface)
+        routerListLen = len(routerList)
+        time.sleep(refreshRate)
+    print("\nScan completed")
+
+    # Organize Data into lists and strings
+    stringList = displayReq(routerList, args.sigLimit)
+    routerList = stringToList(stringList, defaultListLength)
+
+    # Write to CSV file
+    writeToFile(routerList, fileName)
+
+    #print(stringList)
+    
+
+    
+    
 
 def getCSV():
     ### Constants ###
@@ -98,26 +139,30 @@ def getCSV():
     interface_list = [] # Initial list of the interface list
     raw_string_list = [] # List of string lists
     default_list_length = 5 # Capture 4 items in the raw string list
-    default_file_path = "/home/george/Documents/Schoolio/Senior_Sem_2/CS486/Stuffs/R.A.T._Wifi_Module/src/routerlist.csv"
+    default_file_path = None
     default_csv_header_flag = True # Will add a header to the CSV file if true
 
+    testvar = 0
 
     # To compare results to information obtained from the 
     # computer itself, run the following command in the 
-    # terminal:
+    # ubuntu terminal:
     #     watch -n1 iwconfig
+    # NOTE: This command shows the user what router and network is connected to
     while(running_iter <= total_iter ):
         # Collect connected router information
         # Show current iteration
-        while(len(interface_list) < minimum_router_list):
+        while(len(interface_list) < minimum_router_list and testvar < 3):
             print "Length of interface list: {}".format(len(interface_list))
             interface_list = working_interface.call_iwlist(interface).split()
             print "Length of interface list: {}".format(len(interface_list))
+            testvar += 1
         # Pretty printing
         print "\n\n><><><><><><><><><><><><><><><"
         print "><><><>< Iteration {}  ><><><><".format(running_iter)
         print "><><><><><><><><><><><><><><><\n"
         new_list = working_interface.get_interfaces(interface)
+        print(len(new_list))
 
         # Display All Routers
         rawDataString = displayReq(new_list)
@@ -125,16 +170,7 @@ def getCSV():
 
         # Write info to CSV file
         writeToFile(finalList, default_file_path, default_csv_header_flag)
-
-        #printInterfaceList(interface_list)
-        #displayImportant(interface_list)
-
-        #for index, item in enumerate(interface_list):
-            # Format data into strings for readability
-         #   item = item.decode("utf-8")
-            #print("Index: ", index, "Item: ", item)
         time.sleep(refresh_rate)
-        #isSimilarLen(new_list)
         running_iter += 1
         
         
@@ -142,8 +178,8 @@ def getCSV():
     
     print "\n\nScanning terminated...\n\n" 
 
-getCSV()
-
+#getCSV()
+runScan()
 
 #if __name__ == "__main__":
     #main()
